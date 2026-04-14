@@ -3,6 +3,8 @@ package ru.radiationx.anilibria.screen.player.content
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -37,8 +39,10 @@ class ContentPlayerFragment : VideoSupportFragment() {
         private const val ARG_CONTENT_TYPE = "content_type"
         private const val ARG_SEASON = "season"
         private const val ARG_EPISODE = "episode"
-        
+
         private const val FALLBACK_M3U8_URL = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+        private const val SOURCE_TIMEOUT_MS = 30000L
+        private const val TRACK_CHECK_DELAY_MS = 3000L
 
         fun newInstance(
             tmdbId: Int,
@@ -54,6 +58,40 @@ class ContentPlayerFragment : VideoSupportFragment() {
             }
         }
     }
+
+    data class VideoSource(
+        val name: String,
+        val movieUrl: String,
+        val tvUrl: String
+    )
+
+    private val videoSources = listOf(
+        VideoSource(
+            name = "flixer.su",
+            movieUrl = "https://flixer.su/watch/movie/%d",
+            tvUrl = "https://flixer.su/watch/tv/%d/%d/%d"
+        ),
+        VideoSource(
+            name = "vidsrc.to",
+            movieUrl = "https://vidsrc.to/embed/movie/%d",
+            tvUrl = "https://vidsrc.to/embed/tv/%d/%d/%d"
+        ),
+        VideoSource(
+            name = "vidsrc.icu",
+            movieUrl = "https://vidsrc.icu/embed/movie/%d",
+            tvUrl = "https://vidsrc.icu/embed/tv/%d/%d/%d"
+        ),
+        VideoSource(
+            name = "vidsrc-embed.ru",
+            movieUrl = "https://vidsrc-embed.ru/embed/movie?tmdb=%d",
+            tvUrl = "https://vidsrc-embed.ru/embed/tv?tmdb=%d"
+        ),
+        VideoSource(
+            name = "vidking.net",
+            movieUrl = "https://www.vidking.net/embed/movie/%d",
+            tvUrl = "https://www.vidking.net/embed/tv/%d/%d/%d"
+        )
+    )
 
     private val argExtra by lazy {
         ContentPlayerExtra(
@@ -76,34 +114,70 @@ class ContentPlayerFragment : VideoSupportFragment() {
 
     private var extractorWebView: WebView? = null
     private var isExtracting = false
+    private var currentSourceIndex = 0
+    private var extractedM3u8Url: String? = null
+    private var timeoutHandler: Handler? = null
+    private var trackCheckHandler: Handler? = null
+    private var playbackListener: Player.Listener? = null
+    private var pendingM3u8Url: String? = null
+    private var playbackStarted = false
+    private var successSource: VideoSource? = null
 
     @SuppressLint("SetJavaScriptEnabled")
-    @Suppress("DEPRECATION")
     @UnstableApi
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        
+
         requireActivity().window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        
-        Timber.d("ContentPlayerFragment onViewCreated - WebView extraction")
-        
+
+        Timber.d("ContentPlayerFragment onViewCreated - Multi-source fallback")
+
         initializePlayer()
         initializeRows()
-        
+
+        timeoutHandler = Handler(Looper.getMainLooper())
+        trackCheckHandler = Handler(Looper.getMainLooper())
+
         startExtraction()
+    }
+
+    private fun getEmbedUrl(source: VideoSource): String {
+        return when (argExtra.contentType) {
+            PlayerContentType.MOVIE -> String.format(source.movieUrl, argExtra.contentId)
+            PlayerContentType.TV_SERIES -> String.format(source.tvUrl, argExtra.contentId, argExtra.season, argExtra.episode)
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun startExtraction() {
         if (isExtracting) return
         isExtracting = true
+        currentSourceIndex = 0
+        extractedM3u8Url = null
+        pendingM3u8Url = null
+        playbackStarted = false
+        successSource = null
 
-        val tmdbId = argExtra.contentId
-        val embedUrl = when (argExtra.contentType) {
-            PlayerContentType.MOVIE -> "https://flixer.su/watch/movie/$tmdbId"
-            PlayerContentType.TV_SERIES -> "https://flixer.su/watch/tv/$tmdbId/${argExtra.season}/${argExtra.episode}"
+        tryNextSource()
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun tryNextSource() {
+        if (currentSourceIndex >= videoSources.size) {
+            Timber.e("All sources failed, using fallback")
+            allSourcesFailed()
+            return
         }
-        Timber.d("Starting WebView extraction: $embedUrl")
+
+        val source = videoSources[currentSourceIndex]
+        val embedUrl = getEmbedUrl(source)
+
+        Timber.d("Trying source ${currentSourceIndex + 1}/${videoSources.size}: ${source.name} -> $embedUrl")
+
+        destroyExtractor()
+        extractedM3u8Url = null
+        pendingM3u8Url = null
+        playbackStarted = false
 
         extractorWebView = WebView(requireContext()).apply {
             settings.apply {
@@ -134,49 +208,100 @@ class ContentPlayerFragment : VideoSupportFragment() {
                 ): android.webkit.WebResourceResponse? {
                     val url = request?.url?.toString()
                     if (url != null && url.contains(".m3u8")) {
-                        Timber.d("Intercepted m3u8 request: ${url.take(100)}")
-                        requireActivity().runOnUiThread {
-                            isExtracting = false
-                            destroyExtractor()
-                            playVideo(url)
-                        }
+                        Timber.d("[${source.name}] Intercepted m3u8: ${url.take(80)}")
+                        extractedM3u8Url = url
+                        pendingM3u8Url = url
                     }
                     return super.shouldInterceptRequest(view, request)
                 }
-                
+
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    Timber.d("WebView page loaded: $url")
+                    Timber.d("[${source.name}] Page loaded: $url")
                 }
             }
 
             addJavascriptInterface(object {
                 @JavascriptInterface
                 fun onM3u8Found(url: String) {
-                    Timber.d("JS found m3u8: $url")
-                    requireActivity().runOnUiThread {
-                        isExtracting = false
-                        destroyExtractor()
-                        playVideo(url)
-                    }
+                    Timber.d("[${source.name}] JS found m3u8: $url")
+                    extractedM3u8Url = url
+                    pendingM3u8Url = url
                 }
             }, "AndroidBridge")
 
             visibility = View.GONE
             layoutParams = ViewGroup.LayoutParams(1, 1)
-            
+
             loadUrl(embedUrl)
         }
 
         view?.let { (it as? ViewGroup)?.addView(extractorWebView) }
 
-        view?.postDelayed({
-            if (isExtracting) {
-                isExtracting = false
-                Timber.e("Extraction timeout, using fallback URL")
-                viewModel.onExtractionFailed("Timeout")
-                playVideo(FALLBACK_M3U8_URL)
-            }
-        }, 60000)
+        timeoutHandler?.postDelayed({
+            checkSourceResult(source)
+        }, SOURCE_TIMEOUT_MS)
+    }
+
+    private fun checkSourceResult(source: VideoSource) {
+        if (!isExtracting) return
+
+        Timber.d("[${source.name}] Checking result - m3u8: ${extractedM3u8Url != null}, pending: ${pendingM3u8Url != null}, started: $playbackStarted")
+
+        if (pendingM3u8Url != null && !playbackStarted) {
+            Timber.d("[${source.name}] Found m3u8, starting playback check")
+            startPlaybackWithTrackCheck(pendingM3u8Url!!)
+        } else if (pendingM3u8Url != null && playbackStarted) {
+            Timber.d("[${source.name}] Playback already started, waiting for track check")
+        } else {
+            Timber.d("[${source.name}] No m3u8 found, trying next source")
+            currentSourceIndex++
+            tryNextSource()
+        }
+    }
+
+    private fun startPlaybackWithTrackCheck(m3u8Url: String) {
+        playVideo(m3u8Url)
+        playbackStarted = true
+
+        trackCheckHandler?.postDelayed({
+            checkPlaybackTracks(m3u8Url)
+        }, TRACK_CHECK_DELAY_MS)
+    }
+
+    private fun checkPlaybackTracks(sourceM3u8Url: String) {
+        if (!isExtracting) return
+
+        val currentPlayer = player ?: return
+
+        val hasVideo = currentPlayer.currentTracks.groups.any { group ->
+            group.getTrackFormat(0).sampleMimeType?.startsWith("video/") == true
+        }
+        val hasAudio = currentPlayer.currentTracks.groups.any { group ->
+            group.getTrackFormat(0).sampleMimeType?.startsWith("audio/") == true
+        }
+
+        val source = videoSources[currentSourceIndex]
+        Timber.d("[${source.name}] Track check - hasVideo: $hasVideo, hasAudio: $hasAudio")
+
+        if (hasVideo && hasAudio) {
+            Timber.d("[${source.name}] SUCCESS - has both video and audio")
+            successSource = source
+            isExtracting = false
+            currentPlayer.removeListener(playbackListener!!)
+        } else {
+            Timber.d("[${source.name}] FAILED - missing video or audio, trying next source")
+            currentPlayer.stop()
+            currentPlayer.clearMediaItems()
+            currentSourceIndex++
+            tryNextSource()
+        }
+    }
+
+    private fun allSourcesFailed() {
+        isExtracting = false
+        Timber.e("All video sources failed, using fallback URL")
+        viewModel.onExtractionFailed("All sources failed")
+        playVideo(FALLBACK_M3U8_URL)
     }
 
     private fun injectExtractionScript() {
@@ -185,7 +310,6 @@ class ContentPlayerFragment : VideoSupportFragment() {
                 function findM3U8() {
                     var result = null;
                     
-                    // Pattern 1: Direct video element
                     var videos = document.querySelectorAll('video');
                     for (var v = 0; v < videos.length; v++) {
                         var src = videos[v].src;
@@ -202,7 +326,6 @@ class ContentPlayerFragment : VideoSupportFragment() {
                         }
                     }
                     
-                    // Pattern 2: window.player object
                     if (!result && window.player) {
                         if (window.player.src && window.player.src.includes('.m3u8')) {
                             result = window.player.src;
@@ -213,7 +336,6 @@ class ContentPlayerFragment : VideoSupportFragment() {
                         }
                     }
                     
-                    // Pattern 3: HLS.js instances
                     if (!result) {
                         for (var key in window) {
                             try {
@@ -228,7 +350,6 @@ class ContentPlayerFragment : VideoSupportFragment() {
                         }
                     }
                     
-                    // Pattern 4: data-src attributes
                     if (!result) {
                         var elements = document.querySelectorAll('[data-src]');
                         for (var i = 0; i < elements.length; i++) {
@@ -240,37 +361,32 @@ class ContentPlayerFragment : VideoSupportFragment() {
                         }
                     }
                     
-                    // Pattern 5: iframe src
                     if (!result) {
                         var iframes = document.querySelectorAll('iframe');
                         for (var i = 0; i < iframes.length; i++) {
                             var src = iframes[i].src;
-                            if (src && src.includes('workers.dev')) {
+                            if (src && (src.includes('workers.dev') || src.includes('.m3u8'))) {
                                 result = src;
                                 break;
                             }
                         }
                     }
                     
-                    // Pattern 6: Scan scripts for m3u8 or workers.dev URLs
                     if (!result) {
                         var scripts = document.querySelectorAll('script');
                         for (var i = 0; i < scripts.length; i++) {
                             var content = scripts[i].textContent;
                             if (content) {
-                                // Look for m3u8
                                 var match = content.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/);
                                 if (match) {
                                     result = match[0];
                                     break;
                                 }
-                                // Look for workers.dev URLs with m3u8
                                 match = content.match(/https?:\/\/[^\s"'<>]*workers\.dev[^\s"'<>]*/);
                                 if (match) {
                                     result = match[0];
                                     break;
                                 }
-                                // Look for rainorbit or thunderleaf URLs
                                 match = content.match(/https?:\/\/[^\s"'<>]*(?:rainorbit|thunderleaf)[^\s"'<>]*/);
                                 if (match) {
                                     result = match[0];
@@ -307,32 +423,26 @@ class ContentPlayerFragment : VideoSupportFragment() {
 
     private fun playVideo(url: String) {
         Timber.d("Playing video: $url")
-        
+
         val currentPlayer = player ?: return
-        
+
         currentPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
                     logTrackInfo()
                 }
             }
-            
+
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                Timber.d("Tracks changed:")
-                tracks.groups.forEachIndexed { index, trackGroup ->
-                    for (i in 0 until trackGroup.length) {
-                        val format = trackGroup.getTrackFormat(i)
-                        Timber.d("  Track $index:$i - ${format.sampleMimeType}, ${format.width}x${format.height}, bitrate=${format.bitrate}")
-                    }
-                }
+                logTrackInfo()
             }
-        })
-        
+        }.also { playbackListener = it })
+
         currentPlayer.setMediaItem(MediaItem.fromUri(Uri.parse(url)))
         currentPlayer.prepare()
         currentPlayer.play()
     }
-    
+
     private fun logTrackInfo() {
         val videoPlayer = player ?: return
         val trackSelector = videoPlayer.currentTracks
@@ -356,7 +466,6 @@ class ContentPlayerFragment : VideoSupportFragment() {
     }
 
     private fun destroyExtractor() {
-        isExtracting = false
         extractorWebView?.apply {
             stopLoading()
             clearCache(true)
@@ -377,12 +486,12 @@ class ContentPlayerFragment : VideoSupportFragment() {
         }
 
         val context = requireContext()
-        
+
         val dataSourceFactory = DefaultDataSource.Factory(context)
         val mediaSourceFactory = DefaultMediaSourceFactory(context).apply {
             setDataSourceFactory(dataSourceFactory)
         }
-        
+
         val exoPlayer = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
             .setHandleAudioBecomingNoisy(true)
@@ -432,6 +541,8 @@ class ContentPlayerFragment : VideoSupportFragment() {
 
     @UnstableApi
     override fun onDestroyView() {
+        timeoutHandler?.removeCallbacksAndMessages(null)
+        trackCheckHandler?.removeCallbacksAndMessages(null)
         destroyExtractor()
         player?.release()
         player = null
