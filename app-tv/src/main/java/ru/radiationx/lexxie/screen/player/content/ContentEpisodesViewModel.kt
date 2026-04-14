@@ -8,6 +8,7 @@ import ru.radiationx.lexxie.screen.LifecycleViewModel
 import ru.radiationx.lexxie.screen.ContentPlayerScreen
 import ru.radiationx.data.entity.domain.tv.TvSeries
 import ru.radiationx.data.repository.TvSeriesRepository
+import timber.log.Timber
 import javax.inject.Inject
 
 class ContentEpisodesViewModel @Inject constructor(
@@ -18,7 +19,7 @@ class ContentEpisodesViewModel @Inject constructor(
 ) : LifecycleViewModel() {
 
     val tvSeriesData = MutableStateFlow<TvSeries?>(null)
-    val episodesData = MutableStateFlow<List<TvSeries.Episode>>(emptyList())
+    val episodesMap = MutableStateFlow<Map<Int, List<TvSeries.Episode>>>(emptyMap())
     val selectedSeason = MutableStateFlow(argExtra.seasonNumber)
     val isLoading = MutableStateFlow(true)
 
@@ -30,10 +31,14 @@ class ContentEpisodesViewModel @Inject constructor(
         viewModelScope.launch {
             isLoading.value = true
             try {
+                Timber.d("Loading TV series data for tmdbId: ${argExtra.tmdbId}")
                 val tvSeries = tvSeriesRepository.getTvDetails(argExtra.tmdbId)
                 tvSeriesData.value = tvSeries
-                loadEpisodes(tvSeries.seasons, selectedSeason.value)
+                Timber.d("Loaded ${tvSeries.seasons.size} seasons")
+                
+                loadAllSeasons(tvSeries.seasons)
             } catch (e: Exception) {
+                Timber.e(e, "Failed to load TV series")
                 tvSeriesData.value = null
             } finally {
                 isLoading.value = false
@@ -41,27 +46,38 @@ class ContentEpisodesViewModel @Inject constructor(
         }
     }
 
-    private fun loadEpisodes(seasons: List<TvSeries.Season>, seasonNumber: Int) {
+    private fun loadAllSeasons(seasons: List<TvSeries.Season>) {
         viewModelScope.launch {
-            try {
-                val season = seasons.find { it.seasonNumber == seasonNumber }
-                    ?: tvSeriesRepository.getSeasonDetails(argExtra.tmdbId, seasonNumber)
-                
-                episodesData.value = season.episodes
-            } catch (e: Exception) {
-                episodesData.value = emptyList()
-            }
+            val episodesMapResult = mutableMapOf<Int, List<TvSeries.Episode>>()
+            
+            seasons
+                .filter { it.seasonNumber > 0 }
+                .forEach { season ->
+                    try {
+                        Timber.d("Loading episodes for season ${season.seasonNumber}")
+                        // Вызываем getSeasonDetails для каждого сезона чтобы получить эпизоды
+                        val seasonData = tvSeriesRepository.getSeasonDetails(argExtra.tmdbId, season.seasonNumber)
+                        
+                        episodesMapResult[season.seasonNumber] = seasonData.episodes
+                        Timber.d("Season ${season.seasonNumber}: ${seasonData.episodes.size} episodes")
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to load season ${season.seasonNumber}")
+                        episodesMapResult[season.seasonNumber] = emptyList()
+                    }
+                }
+            
+            episodesMap.value = episodesMapResult
+            Timber.d("All seasons loaded: ${episodesMapResult.size} seasons")
         }
     }
 
     fun selectSeason(seasonNumber: Int) {
+        Timber.d("selectSeason called: $seasonNumber")
         selectedSeason.value = seasonNumber
-        tvSeriesData.value?.seasons?.let { seasons ->
-            loadEpisodes(seasons, seasonNumber)
-        }
     }
 
     fun onEpisodeClick(episode: TvSeries.Episode) {
+        Timber.d("onEpisodeClick: ${episode.name}")
         guidedRouter.close()
         router.navigateTo(ContentPlayerScreen(
             tmdbId = argExtra.tmdbId,

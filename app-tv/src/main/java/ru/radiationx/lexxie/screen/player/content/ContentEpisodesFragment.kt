@@ -10,6 +10,7 @@ import ru.radiationx.data.entity.domain.tv.TvSeries
 import ru.radiationx.quill.get
 import ru.radiationx.quill.viewModel
 import ru.radiationx.shared.ktx.android.subscribeTo
+import timber.log.Timber
 import javax.inject.Inject
 
 class ContentEpisodesFragment : FakeGuidedStepFragment() {
@@ -42,76 +43,100 @@ class ContentEpisodesFragment : FakeGuidedStepFragment() {
         viewLifecycleOwner.lifecycle.addObserver(viewModel)
 
         subscribeTo(viewModel.tvSeriesData.filterNotNull()) { tvSeries ->
-            buildSeasonActions(tvSeries.seasons)
-        }
-
-        subscribeTo(viewModel.episodesData) { episodes ->
-            buildEpisodeActions(episodes)
+            Timber.d("tvSeriesData loaded: ${tvSeries.name}, seasons: ${tvSeries.seasons.size}")
+            subscribeTo(viewModel.episodesMap) { episodesMap ->
+                Timber.d("episodesMap updated: ${episodesMap.size} seasons with episodes")
+                buildFlatSeasonList(tvSeries.seasons, episodesMap)
+            }
         }
     }
 
-    private fun buildSeasonActions(seasons: List<TvSeries.Season>) {
-        if (seasons.size <= 1) {
+    private fun buildFlatSeasonList(
+        seasons: List<TvSeries.Season>,
+        episodesMap: Map<Int, List<TvSeries.Episode>>
+    ) {
+        if (seasons.isEmpty()) {
+            Timber.w("No seasons to show")
             return
         }
 
-        val seasonActions = seasons
+        val actions = mutableListOf<GuidedAction>()
+
+        seasons
             .filter { it.seasonNumber > 0 }
-            .map { season ->
-                GuidedAction.Builder(requireContext())
-                    .id(ACTION_SEASON_PREFIX + season.seasonNumber)
-                    .title(season.name ?: "Сезон ${season.seasonNumber}")
-                    .description("${season.episodeCount} эпизодов")
-                    .focusable(true)
-                    .enabled(true)
-                    .build()
+            .forEach { season ->
+                Timber.d("Building season: ${season.seasonNumber} - ${season.name}")
+
+                // 1. Сезон как заголовок (НЕ кликабельный)
+                actions.add(
+                    GuidedAction.Builder(requireContext())
+                        .id(ACTION_SEASON_PREFIX + season.seasonNumber)
+                        .title(season.name ?: "Сезон ${season.seasonNumber}")
+                        .description("${season.episodeCount} эпизодов")
+                        .focusable(false)
+                        .enabled(false)
+                        .build()
+                )
+                Timber.d("Season ${season.seasonNumber} added as header")
+
+                // 2. Эпизоды (кликабельные)
+                val episodes = episodesMap[season.seasonNumber] ?: emptyList()
+                Timber.d("Season ${season.seasonNumber} has ${episodes.size} episodes")
+
+                episodes.forEach { episode ->
+                    val description = buildString {
+                        if (episode.airDate != null) {
+                            append(episode.airDate)
+                        }
+                        if (episode.runtime != null) {
+                            if (isNotEmpty()) append(" • ")
+                            append("${episode.runtime} мин")
+                        }
+                    }
+
+                    actions.add(
+                        GuidedAction.Builder(requireContext())
+                            .id(ACTION_EPISODE_PREFIX + episode.episodeNumber)
+                            .title("   ${episode.episodeNumber}. ${episode.name}")
+                            .description(description.takeIf { it.isNotEmpty() })
+                            .focusable(true)
+                            .enabled(true)
+                            .build()
+                    )
+                }
             }
 
-        setActions(seasonActions)
-    }
-
-    private fun buildEpisodeActions(episodes: List<TvSeries.Episode>) {
-        val episodeActions = episodes.map { episode ->
-            val description = buildString {
-                if (episode.airDate != null) {
-                    append(episode.airDate)
-                }
-                if (episode.runtime != null) {
-                    if (isNotEmpty()) append(" • ")
-                    append("${episode.runtime} мин")
-                }
-            }
-            GuidedAction.Builder(requireContext())
-                .id(ACTION_EPISODE_PREFIX + episode.episodeNumber)
-                .title(episode.name)
-                .description(description.takeIf { it.isNotEmpty() })
-                .focusable(true)
-                .enabled(true)
-                .build()
-        }
-        val existingSeasonActions = actions.filter { it.id < ACTION_EPISODE_PREFIX }
-        setActions(existingSeasonActions + episodeActions)
+        Timber.d("Setting ${actions.size} total actions (seasons + episodes)")
+        setActions(actions)
     }
 
     override fun onGuidedActionClicked(action: GuidedAction) {
+        Timber.d("Action clicked: ${action.id}, title: ${action.title}")
+
         when {
             action.id >= ACTION_EPISODE_PREFIX -> {
                 val episodeNumber = (action.id - ACTION_EPISODE_PREFIX).toInt()
-                val episode = viewModel.episodesData.value.find { it.episodeNumber == episodeNumber }
+                val episode = findEpisodeByNumber(episodeNumber)
                 if (episode != null) {
+                    Timber.d("Episode clicked: ${episode.name}")
                     viewModel.onEpisodeClick(episode)
                 }
             }
             action.id >= ACTION_SEASON_PREFIX -> {
-                val seasonNumber = (action.id - ACTION_SEASON_PREFIX).toInt()
-                viewModel.selectSeason(seasonNumber)
+                Timber.d("Season header clicked - ignoring (it's a header)")
             }
         }
     }
 
-    override fun onSubGuidedActionClicked(action: GuidedAction): Boolean {
-        onGuidedActionClicked(action)
-        return true
+    private fun findEpisodeByNumber(episodeNumber: Int): TvSeries.Episode? {
+        val episodesMap = viewModel.episodesMap.value
+        for ((seasonNum, episodes) in episodesMap) {
+            val episode = episodes.find { it.episodeNumber == episodeNumber }
+            if (episode != null) {
+                return episode
+            }
+        }
+        return null
     }
 
     private val argExtra by lazy {
