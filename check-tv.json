@@ -1,0 +1,27 @@
+{
+  "update": {
+    "version_code": "5",
+    "version_name": "1.2.0",
+    "version_build": "0",
+    "build_date": "3 ноября 2023 г.",
+    "links": [
+      {
+        "name": "AniLibria TV",
+        "url": "https://github.com/anilibria/anilibria-app/releases/download/tv-1.2.0/AniLibria_TV_v1.2.0.apk",
+        "type": "file"
+      }
+    ],
+    "important": [],
+    "added": [
+      "Вывод сезона (прим. \"2023 осень\")",
+      "Вывод названий серий (если указано)"
+    ],
+    "fixed": [
+      "Авторизация по коду"
+    ],
+    "changed": [
+      "При старте приложения теперь выбирается самая быстрая конфигурация",
+      "Загрузка файлов внутри приложения, а не через браузер"
+    ]
+  }
+}

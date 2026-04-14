@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Lexxie TV</string>
+    <string name="config_action_repeat">Повторить</string>
+    <string name="config_action_skip">Пропустить</string>
+    <string name="config_action_next">Следующий шаг</string>
+    <string name="config_action_restart">Начать проверку заново</string>
+    <string name="cd_config_logo">Логотип</string>
+    <string name="config_logo_name">Lexxie</string>
+
+    <string name="global_search_hint">Поиск</string>
+    <string name="global_search_label">Lexxie TV</string>
+    <string name="global_search_settings_description">Контент на Lexxie TV</string>
+</resources>

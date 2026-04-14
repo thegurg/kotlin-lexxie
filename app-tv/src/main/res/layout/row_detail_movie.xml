@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:clipToPadding="false"
+    tools:background="@color/dark_colorPrimary">
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_left"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_begin="?browsePaddingEnd" />
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_right"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_end="?browsePaddingEnd" />
+
+    <com.google.android.material.imageview.ShapeableImageView
+        android:id="@+id/moviePoster"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="?browsePaddingBottom"
+        android:layout_marginEnd="32dp"
+        android:layout_marginBottom="16dp"
+        android:background="@color/dark_cardBackground"
+        android:elevation="16dp"
+        android:scaleType="centerCrop"
+        android:theme="@style/AppTheme.Material"
+        app:layout_constraintBottom_toTopOf="@id/movieActions"
+        app:layout_constraintDimensionRatio="2:3"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintWidth_percent="0.3"
+        app:shapeAppearanceOverlay="@style/AppTheme.RoundedImageView" />
+
+    <TextView
+        android:id="@+id/movieTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="?browsePaddingBottom"
+        android:layout_marginEnd="16dp"
+        android:textColor="@color/dark_textDefault"
+        android:textSize="34sp"
+        app:layout_constraintEnd_toStartOf="@id/moviePoster"
+        app:layout_constraintStart_toStartOf="@id/guideline_left"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="Бегущий по лезвию 2049" />
+
+    <TextView
+        android:id="@+id/movieSubtitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="16dp"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textColor="@color/dark_textDefault"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toStartOf="@id/moviePoster"
+        app:layout_constraintStart_toStartOf="@id/guideline_left"
+        app:layout_constraintTop_toBottomOf="@id/movieTitle"
+        tools:text="2017 • Фантастика • 2ч 44мин ⭐ 8.0" />
+
+    <TextView
+        android:id="@+id/movieDescription"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:alpha="0.8"
+        android:ellipsize="end"
+        android:lineSpacingMultiplier="1.33"
+        android:maxLines="6"
+        android:textColor="@color/dark_textDefault"
+        android:textSize="14sp"
+        app:layout_constraintBottom_toTopOf="@id/movieActions"
+        app:layout_constraintEnd_toStartOf="@id/moviePoster"
+        app:layout_constraintStart_toStartOf="@id/guideline_left"
+        app:layout_constraintTop_toBottomOf="@id/movieSubtitle"
+        app:layout_constraintVertical_bias="0"
+        tools:text="Как и оригинальный фильм, действие «Бегущего по лезвию 2049» разворачивается в мрачном, упадническом мире будущего, где искусственные люди — репликанты — служат рабами на колониях за пределами Земли." />
+
+    <androidx.appcompat.widget.LinearLayoutCompat
+        android:id="@+id/movieActions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@id/guideline_right"
+        app:layout_constraintHorizontal_bias="0"
+        app:layout_constraintStart_toStartOf="@id/guideline_left">
+
+        <Button
+            android:id="@+id/movieActionPlay"
+            style="?attr/detailsActionButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="16dp"
+            android:text="Смотреть" />
+
+        <Button
+            android:id="@+id/movieActionFavorite"
+            style="?attr/detailsActionButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="В избранное" />
+
+    </androidx.appcompat.widget.LinearLayoutCompat>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
