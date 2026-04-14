@@ -17,7 +17,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <ru.radiationx.anilibria.ui.widget.ShadowDescriptionView
+        <ru.radiationx.lexxie.ui.widget.ShadowDescriptionView
             android:id="@+id/shadowDescriptionView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

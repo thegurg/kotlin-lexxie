@@ -13,12 +13,12 @@ static def getDateTime() {
 }
 
 android {
-    namespace "ru.radiationx.anilibria"
+    namespace "ru.radiationx.lexxie"
 
     compileSdk app_compile_sdk_version
 
     defaultConfig {
-        applicationId "ru.radiationx.anilibria.app.tv"
+        applicationId "ru.radiationx.lexxie.app.tv"
         minSdk tv_min_sdk_version
         targetSdk app_target_sdk_version
         versionCode tv_version_code
@@ -40,7 +40,7 @@ android {
 
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
-            def appName = "AniLibria_TV"
+            def appName = "Lexxie_TV"
             def versionName = variant.versionName
             outputFileName = "${appName}_v${versionName}.apk"
         }

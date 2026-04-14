@@ -1,0 +1,131 @@
+package ru.radiationx.lexxie.screen.movies
+
+import android.app.AlertDialog
+import android.os.Bundle
+import android.view.View
+import android.widget.EditText
+import androidx.leanback.app.RowsSupportFragment
+import androidx.leanback.widget.ArrayObjectAdapter
+import androidx.leanback.widget.HeaderItem
+import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.OnItemViewSelectedListener
+import androidx.leanback.widget.Presenter
+import androidx.leanback.widget.Row
+import androidx.leanback.widget.RowPresenter
+import com.github.terrakok.cicerone.Router
+import ru.radiationx.lexxie.common.BaseCardsViewModel
+import ru.radiationx.lexxie.common.CardDiffCallback
+import ru.radiationx.lexxie.common.GradientBackgroundManager
+import ru.radiationx.lexxie.common.LibriaCard
+import ru.radiationx.lexxie.common.LinkCard
+import ru.radiationx.lexxie.common.LoadingCard
+import ru.radiationx.lexxie.common.RowDiffCallback
+import ru.radiationx.lexxie.extension.applyCard
+import ru.radiationx.lexxie.screen.MovieSearchScreen
+import ru.radiationx.lexxie.ui.presenter.CardPresenterSelector
+import ru.radiationx.lexxie.ui.presenter.cust.CustomListRowPresenter
+import ru.radiationx.lexxie.ui.presenter.cust.CustomListRowViewHolder
+import ru.radiationx.quill.inject
+import ru.radiationx.shared.ktx.android.subscribeTo
+import ru.radiationx.shared_app.di.quillParentViewModel
+
+class MoviesFragment : RowsSupportFragment() {
+
+    private val rowsPresenter by lazy { CustomListRowPresenter() }
+    private val rowsAdapter by lazy { ArrayObjectAdapter(rowsPresenter) }
+
+    private val backgroundManager by inject<GradientBackgroundManager>()
+    private val router by inject<Router>()
+    private val viewModel by quillParentViewModel<MoviesViewModel>()
+
+    private val cardsPresenter = CardPresenterSelector {
+        viewModel.onLinkCardBind()
+    }
+    private val cardsAdapter = ArrayObjectAdapter(cardsPresenter)
+
+    private var searchDialog: AlertDialog? = null
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        viewLifecycleOwner.lifecycle.addObserver(viewModel)
+
+        adapter = rowsAdapter
+        onItemViewSelectedListener = ItemViewSelectedListener()
+
+        viewModel.setSearchCallback { showSearchDialog() }
+
+        setOnItemViewClickedListener { _, item, _, _ ->
+            when (item) {
+                is LinkCard -> {
+                    if (item == MoviesViewModel.searchCard) {
+                        showSearchDialog()
+                    } else {
+                        viewModel.onLinkCardBind()
+                    }
+                }
+                is LoadingCard -> viewModel.onLoadingCardClick()
+                is LibriaCard -> viewModel.onLibriaCardClick(item)
+            }
+        }
+
+        val row = ListRow(1L, HeaderItem(viewModel.defaultTitle), cardsAdapter)
+
+        subscribeTo(viewModel.cardsData) { cards ->
+            val allCards = listOf(MoviesViewModel.searchCard) + cards
+            cardsAdapter.setItems(allCards, CardDiffCallback)
+        }
+
+        rowsAdapter.add(row)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        notifyReady()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        searchDialog?.dismiss()
+    }
+
+    private fun showSearchDialog() {
+        val editText = EditText(requireContext()).apply {
+            hint = "Введите название фильма..."
+            setSingleLine()
+        }
+        searchDialog = AlertDialog.Builder(requireContext())
+            .setTitle("Поиск фильмов")
+            .setView(editText)
+            .setPositiveButton("Поиск") { _, _ ->
+                viewModel.search(editText.text.toString())
+            }
+            .setNegativeButton("Отмена", null)
+            .setNeutralButton("Открыть экран поиска") { _, _ ->
+                router.navigateTo(MovieSearchScreen())
+            }
+            .setOnDismissListener { searchDialog = null }
+            .show()
+    }
+
+    private fun notifyReady() {
+        mainFragmentAdapter.fragmentHost.notifyDataReady(mainFragmentAdapter)
+    }
+
+    private inner class ItemViewSelectedListener : OnItemViewSelectedListener {
+        override fun onItemSelected(
+            itemViewHolder: Presenter.ViewHolder?, item: Any?,
+            rowViewHolder: RowPresenter.ViewHolder, row: Row,
+        ) {
+            if (rowViewHolder is CustomListRowViewHolder) {
+                backgroundManager.applyCard(item)
+                when (item) {
+                    is LibriaCard -> rowViewHolder.setDescription(item.title, item.description)
+                    is LinkCard -> rowViewHolder.setDescription(item.title, "")
+                    is LoadingCard -> rowViewHolder.setDescription(item.title, item.description)
+                    else -> rowViewHolder.setDescription("", "")
+                }
+            }
+        }
+    }
+}
