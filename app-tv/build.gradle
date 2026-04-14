@@ -7,7 +7,13 @@ plugins {
     alias libs.plugins.ksp
 }
 
-static def getDateTime() {
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore/keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def getDateTime() {
     DateFormat df = new SimpleDateFormat("dd MMMMM yyyy")
     return df.format(new Date()) + " г."
 }
@@ -16,6 +22,22 @@ android {
     namespace "ru.radiationx.lexxie"
 
     compileSdk app_compile_sdk_version
+
+    signingConfigs {
+        release {
+            if (keystoreProperties['storeFile']) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            } else {
+                storeFile file('keystore/lexxie-release.jks')
+                storePassword 'Lexxie2024Secure'
+                keyAlias 'lexxie'
+                keyPassword 'Lexxie2024Secure'
+            }
+        }
+    }
 
     defaultConfig {
         applicationId "ru.radiationx.lexxie.app.tv"
@@ -33,6 +55,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

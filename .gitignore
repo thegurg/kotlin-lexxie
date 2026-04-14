@@ -4,6 +4,22 @@ keystore.jks
 passses.rtf
 app/stable
 
+# ====================
+# Lexxie TV Keystore & Signing
+# ====================
+*.jks
+*.keystore
+keystore.properties
+app-tv/keystore/
+app-phone/keystore/
+keystore/
+
+# ====================
+# APK & AAB files
+# ====================
+*.apk
+*.aab
+
 ### Android ###
 # Built application files
 *.ap_
